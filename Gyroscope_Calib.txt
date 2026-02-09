@@ -1,0 +1,121 @@
+    INITIALIZE SYSTEM
+        Initialize IMU Hardware
+        Initialize Gyroscope Sensor Interface
+        Initialize Temperature Sensor (optional)
+        Initialize Flight Computer Interface
+        Initialize Data Storage (EEPROM / Flash / RAM)
+        Initialize System Timer
+
+    SET CALIBRATION PARAMETERS
+        calibrationSampleCount = N
+        samplingInterval = dt
+        stabilizationTime = T_stable
+        stationaryThreshold = gyroStationaryLimit
+
+    DISPLAY "Gyroscope Calibration Started"
+    DISPLAY "Ensure Rocket is Stationary on Launch Pad"
+
+    WAIT stabilizationTime
+
+    INITIALIZE ACCUMULATORS
+        gyroSum_X = 0
+        gyroSum_Y = 0
+        gyroSum_Z = 0
+
+    INITIALIZE SAMPLE COUNTER
+        sampleCounter = 0
+
+    START CALIBRATION LOOP
+
+    WHILE sampleCounter < calibrationSampleCount DO
+
+// Step 1: Acquire Raw Gyroscope Data
+        gyroRawData = IMU_ReadGyroscope()
+
+// Step 2: Acquire Temperature (Optional)
+        imuTemperature = IMU_ReadTemperature()
+
+// Step 3: Validate Stationary Condition
+        gyroMagnitude = Magnitude(gyroRawData)
+
+        IF gyroMagnitude < stationaryThreshold THEN
+
+// Step 4: Accumulate Samples
+            gyroSum_X += gyroRawData.X
+            gyroSum_Y += gyroRawData.Y
+            gyroSum_Z += gyroRawData.Z
+
+            sampleCounter += 1
+
+        ELSE
+            DISPLAY "Movement Detected - Restarting Calibration"
+
+            gyroSum_X = 0
+            gyroSum_Y = 0
+            gyroSum_Z = 0
+            sampleCounter = 0
+        ENDIF
+
+        WAIT samplingInterval
+    END WHILE
+
+// STEP 5: Compute Average Gyroscope Output
+        avgGyro.X = gyroSum_X / calibrationSampleCount
+        avgGyro.Y = gyroSum_Y / calibrationSampleCount
+        avgGyro.Z = gyroSum_Z / calibrationSampleCount
+
+// STEP 6: Define Expected Angular Rate Vector
+        expectedAngularRate.X = 0
+        expectedAngularRate.Y = 0
+        expectedAngularRate.Z = 0
+
+// STEP 7: Compute Gyroscope Bias
+        gyroBias.X = avgGyro.X - expectedAngularRate.X
+        gyroBias.Y = avgGyro.Y - expectedAngularRate.Y
+        gyroBias.Z = avgGyro.Z - expectedAngularRate.Z
+
+// STEP 8: Store Bias Calibration Parameters
+        StoreGyroBias(gyroBias)
+        StoreGyroTemperatureReference(imuTemperature)
+
+// STEP 9: Verify Calibration
+        IF BiasMagnitude(gyroBias) > allowableBiasLimit THEN
+            DISPLAY "Warning: Gyroscope Bias Out of Range"
+        ENDIF
+
+    DISPLAY "Gyroscope Bias Calibration Complete"
+
+--------------------------------------------------
+START RUNTIME GYROSCOPE COMPENSATION LOOP
+--------------------------------------------------
+
+//Example Explained in short steps :- 
+        WHILE rocket is powered DO
+
+// Step 1: Acquire Raw Gyroscope Data
+        gyroRawData = IMU_ReadGyroscope()
+
+// Step 2: Remove Bias
+        gyroBiasCorrected.X = gyroRawData.X - gyroBias.X
+        gyroBiasCorrected.Y = gyroRawData.Y - gyroBias.Y
+        gyroBiasCorrected.Z = gyroRawData.Z - gyroBias.Z
+
+// Step 3: Apply Scale and Alignment Correction
+        gyroCorrected = gyroCalibrationMatrix × gyroBiasCorrected
+
+// Step 4: Apply Temperature Compensation
+        currentTemperature = IMU_ReadTemperature()
+
+        gyroCorrected =
+            TemperatureCompensation(
+                gyroCorrected,
+                currentTemperature
+            )
+
+// Step 5: Send Corrected Angular Rates to Flight Computer
+        FlightComputer_SendGyroData(gyroCorrected)
+
+        WAIT runtimeUpdateInterval
+    END WHILE
+
+    SHUTDOWN SYSTEM

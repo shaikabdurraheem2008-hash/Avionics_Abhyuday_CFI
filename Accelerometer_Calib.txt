@@ -1,0 +1,138 @@
+    INITIALIZE SYSTEM
+        Initialize IMU Hardware
+        Initialize Accelerometer Sensor Interface
+        Initialize Temperature Sensor (optional)
+        Initialize Flight Computer Interface
+        Initialize Data Storage (EEPROM / Flash / RAM)
+        Initialize System Timer
+
+    SET CALIBRATION PARAMETERS
+        calibrationSampleCount = N
+        samplingInterval = dt
+        stabilizationTime = T_stable
+        gravityConstant = 1g
+
+    DISPLAY "Accelerometer Calibration Started"
+    DISPLAY "Ensure Rocket is Vertically Mounted and Stationary"
+
+    WAIT stabilizationTime
+
+    INITIALIZE ACCUMULATORS
+        accelSum_X = 0
+        accelSum_Y = 0
+        accelSum_Z = 0
+
+    INITIALIZE SAMPLE COUNTER
+        sampleCounter = 0
+
+    START CALIBRATION LOOP
+
+    WHILE sampleCounter < calibrationSampleCount DO
+
+// Step 1: Acquire Raw Accelerometer Data
+        accelRawData = IMU_ReadAccelerometer()
+
+// Step 2: Acquire Temperature (Optional)
+        imuTemperature = IMU_ReadTemperature()
+
+// Step 3: Validate Stationary Condition
+        accelMagnitude = Magnitude(accelRawData)
+
+        IF Absolute(accelMagnitude - gravityConstant) < stationaryTolerance THEN
+
+// Step 4: Accumulate Samples
+            accelSum_X += accelRawData.X
+            accelSum_Y += accelRawData.Y
+            accelSum_Z += accelRawData.Z
+
+            sampleCounter += 1
+
+        ELSE
+            DISPLAY "Movement Detected - Restarting Calibration"
+            Reset accumulators
+            sampleCounter = 0
+        ENDIF
+
+        WAIT samplingInterval
+
+    END WHILE
+
+// Step 5: Compute Average Accelerometer Output
+    avgAccel.X = accelSum_X / calibrationSampleCount
+    avgAccel.Y = accelSum_Y / calibrationSampleCount
+    avgAccel.Z = accelSum_Z / calibrationSampleCount
+
+// Step 6: Define Expected Gravity Vector
+// For vertical sounding rocket on launch pad
+    expectedGravity.X = 0
+    expectedGravity.Y = 0
+    expectedGravity.Z = -gravityConstant
+
+// Step 7: Compute Accelerometer Bias
+    accelBias.X = avgAccel.X - expectedGravity.X
+    accelBias.Y = avgAccel.Y - expectedGravity.Y
+    accelBias.Z = avgAccel.Z - expectedGravity.Z
+
+// Step 8: Store Calibration Parameters
+    StoreAccelBias(accelBias)
+    StoreAccelTemperatureReference(imuTemperature)
+
+// Step 9: Verify Calibration
+    IF BiasMagnitude(accelBias) > allowableBiasLimit THEN
+        DISPLAY "Warning: Accelerometer Bias Out of Range"
+    ENDIF
+
+    DISPLAY "Accelerometer Calibration Complete"
+
+--------------------------------------------------
+OPTIONAL MULTI-AXIS SCALE FACTOR CALIBRATION
+--------------------------------------------------
+
+    FOR each orientation IN SixAxisCalibrationPositions DO
+
+        DISPLAY "Place Rocket in Orientation:", orientation
+
+        WAIT stabilizationTime
+
+        Collect accelerometer samples
+
+        avgMeasurement = Average(samples)
+
+        StoreCalibrationMeasurement(orientation, avgMeasurement)
+
+    END FOR
+
+// Step 10: Compute Scale and Alignment Matrix
+    calibrationMatrix = SolveCalibrationMatrix()
+
+    StoreCalibrationMatrix(calibrationMatrix)
+
+--------------------------------------------------
+START RUNTIME ACCELEROMETER COMPENSATION LOOP
+--------------------------------------------------
+// Example explained in short steps :- 
+    WHILE rocket is powered DO
+
+// Step 1: Acquire Raw Accelerometer Data
+        accelRawData = IMU_ReadAccelerometer()
+
+// Step 2: Remove Bias
+        accelBiasCorrected.X = accelRawData.X - accelBias.X
+        accelBiasCorrected.Y = accelRawData.Y - accelBias.Y
+        accelBiasCorrected.Z = accelRawData.Z - accelBias.Z
+
+// Step 3: Apply Scale and Alignment Correction
+        accelCorrected = calibrationMatrix × accelBiasCorrected
+
+// Step 4: Optional Temperature Compensation
+        currentTemperature = IMU_ReadTemperature()
+        accelCorrected = TemperatureCompensation(accelCorrected, currentTemperature)
+
+// Step 5: Send Corrected Acceleration to Flight Computer
+        FlightComputer_SendAccelData(accelCorrected)
+
+        WAIT runtimeUpdateInterval
+
+    END WHILE
+
+    SHUTDOWN SYSTEM
