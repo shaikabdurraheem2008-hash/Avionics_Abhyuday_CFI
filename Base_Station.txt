@@ -1,0 +1,43 @@
+INITIALIZE SYSTEM
+    Initialize GNSS Receiver
+    Set GNSS Receiver Mode = BASE STATION
+    Load Surveyed Base Coordinates (Lat, Lon, Alt)
+    Initialize Telemetry Transmitter
+    Initialize Communication Interface (UART/SPI)
+    Initialize System Timer
+
+    START MAIN LOOP
+
+    WHILE system is active DO
+
+// Step 1: Acquire GNSS Raw Measurements
+        rawData = GNSS_ReadRawMeasurements()
+    // Includes:
+    // pseudorange
+    // carrier phase
+    // doppler
+    // satellite ephemeris
+
+// Step 2: Compute Expected Satellite Ranges
+        satellitePosition = ComputeSatellitePosition(rawData.ephemeris)
+        expectedRange = CalculateRange(baseCoordinates, satellitePosition)
+
+// Step 3: Estimate Measurement Errors
+        measurementError = rawData.range - expectedRange
+
+// Step 4: Generate RTK Correction Data
+        correctionPacket = GenerateRTCM(
+                                rawData,
+                                measurementError,
+                                satellitePosition
+                            )
+
+// Step 5: Transmit Correction Data
+        Telemetry_Send(correctionPacket)
+
+// Step 6: Maintain Update Rate
+        Wait(update_interval)   // Typically 1–20 Hz
+
+    END WHILE
+
+    SHUTDOWN SYSTEM
