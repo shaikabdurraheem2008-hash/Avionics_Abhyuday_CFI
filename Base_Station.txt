@@ -1,0 +1,57 @@
+INITIALIZE SYSTEM
+    Initialize GNSS Receiver
+    Set GNSS Receiver Mode = ROVER
+    Initialize Telemetry Receiver
+    Initialize Flight Computer Interface
+    Initialize IMU (optional)
+    Initialize System Timer
+
+    START MAIN LOOP
+
+    WHILE rocket is powered DO
+
+// Step 1: Acquire GNSS Satellite Measurements
+        roverRawData = GNSS_ReadRawMeasurements()
+
+// Step 2: Receive Correction Data
+        correctionPacket = Telemetry_Receive()
+
+        IF correctionPacket is valid THEN
+
+// Step 3: Decode RTCM Corrections
+        correctionData = DecodeRTCM(correctionPacket)
+
+// Step 4: Apply Differential Corrections
+        correctedMeasurements = ApplyCorrections(
+                                    roverRawData,
+                                    correctionData
+                                )
+
+// Step 5: Perform Carrier Phase Ambiguity Resolution
+        ambiguitySolution = ResolveAmbiguity(correctedMeasurements)
+
+// Step 6: Compute Precise RTK Position
+        precisePosition = RTK_PositionSolution(
+                              correctedMeasurements,
+                              ambiguitySolution
+                          )
+
+        ELSE
+// If corrections unavailable → fallback mode
+            precisePosition = GNSS_StandalonePosition(roverRawData)
+        ENDIF
+
+// Step 7: Send Position to Flight Computer
+        FlightComputer_Send(precisePosition)
+
+// Step 8: Optional Sensor Fusion with IMU
+        fusedPosition = KalmanFilterFusion(precisePosition, IMU_Data())
+
+// Step 9: Send Telemetry to Ground
+        Telemetry_SendRocketData(fusedPosition)
+
+        Wait(update_interval)
+
+    END WHILE
+
+    SHUTDOWN SYSTEM
