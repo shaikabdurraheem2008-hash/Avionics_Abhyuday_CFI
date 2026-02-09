@@ -128,11 +128,11 @@ START RUNTIME ACCELEROMETER COMPENSATION LOOP
         currentTemperature = IMU_ReadTemperature()
         accelCorrected = TemperatureCompensation(accelCorrected, currentTemperature)
 
-// Step 5: Send Corrected Acceleration to Flight Computer
+// Step 5: Send Corrected Acceleration To Flight Computer
         FlightComputer_SendAccelData(accelCorrected)
 
         WAIT runtimeUpdateInterval
-
+    
     END WHILE
-
+    
     SHUTDOWN SYSTEM
