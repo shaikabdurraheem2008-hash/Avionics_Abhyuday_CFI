@@ -1,138 +1,189 @@
-    INITIALIZE SYSTEM
-        Initialize IMU Hardware
-        Initialize Accelerometer Sensor Interface
-        Initialize Temperature Sensor (optional)
-        Initialize Flight Computer Interface
-        Initialize Data Storage (EEPROM / Flash / RAM)
-        Initialize System Timer
+================================================================================
+PHASE 1: COLLECT DATA FROM ALL 6 ORIENTATIONS
+================================================================================
 
-    SET CALIBRATION PARAMETERS
-        calibrationSampleCount = N
-        samplingInterval = dt
-        stabilizationTime = T_stable
-        gravityConstant = 1g
+    DEFINE ORIENTATION_LIST[6]
+// Each orientation specifies which axis is aligned with gravity
+        ORIENTATION_LIST[0] = {name: "+X UP",   axis: X,  direction: +1}
+        ORIENTATION_LIST[1] = {name: "-X DOWN", axis: X,  direction: -1}
+        ORIENTATION_LIST[2] = {name: "+Y UP",   axis: Y,  direction: +1}
+        ORIENTATION_LIST[3] = {name: "-Y DOWN", axis: Y,  direction: -1}
+        ORIENTATION_LIST[4] = {name: "+Z UP",   axis: Z,  direction: +1}
+        ORIENTATION_LIST[5] = {name: "-Z DOWN", axis: Z,  direction: -1}
 
-    DISPLAY "Accelerometer Calibration Started"
-    DISPLAY "Ensure Rocket is Vertically Mounted and Stationary"
+    INITIALIZE MEASUREMENT STORAGE
+        CREATE ARRAY: measurementData[6][3]     // 6 orientations × 3 axes (X,Y,Z)
 
-    WAIT stabilizationTime
+    FOR orientationIndex = 0 TO 5 DO
+    
+        currentOrientation = ORIENTATION_LIST[orientationIndex]
+    
+        DISPLAY "Orientation", orientationIndex + 1, "of 6"
+        DISPLAY "Position rocket with:", currentOrientation.name
+        DISPLAY "Press ENTER when rocket is stable..."
+        WAIT_FOR_USER_INPUT()
+    
+        DISPLAY "Stabilizing for", stabilizationTime, "seconds..."
+        WAIT stabilizationTime
+    
+// Initialize accumulators for this orientation
 
-    INITIALIZE ACCUMULATORS
         accelSum_X = 0
         accelSum_Y = 0
         accelSum_Z = 0
-
-    INITIALIZE SAMPLE COUNTER
-        sampleCounter = 0
-
-    START CALIBRATION LOOP
-
-    WHILE sampleCounter < calibrationSampleCount DO
-
-// Step 1: Acquire Raw Accelerometer Data
-        accelRawData = IMU_ReadAccelerometer()
-
-// Step 2: Acquire Temperature (Optional)
-        imuTemperature = IMU_ReadTemperature()
-
-// Step 3: Validate Stationary Condition
-        accelMagnitude = Magnitude(accelRawData)
-
-        IF Absolute(accelMagnitude - gravityConstant) < stationaryTolerance THEN
-
-// Step 4: Accumulate Samples
-            accelSum_X += accelRawData.X
-            accelSum_Y += accelRawData.Y
-            accelSum_Z += accelRawData.Z
-
-            sampleCounter += 1
-
-        ELSE
-            DISPLAY "Movement Detected - Restarting Calibration"
-            Reset accumulators
-            sampleCounter = 0
-        ENDIF
-
-        WAIT samplingInterval
-
-    END WHILE
-
-// Step 5: Compute Average Accelerometer Output
-    avgAccel.X = accelSum_X / calibrationSampleCount
-    avgAccel.Y = accelSum_Y / calibrationSampleCount
-    avgAccel.Z = accelSum_Z / calibrationSampleCount
-
-// Step 6: Define Expected Gravity Vector
-// For vertical sounding rocket on launch pad
-    expectedGravity.X = 0
-    expectedGravity.Y = 0
-    expectedGravity.Z = -gravityConstant
-
-// Step 7: Compute Accelerometer Bias
-    accelBias.X = avgAccel.X - expectedGravity.X
-    accelBias.Y = avgAccel.Y - expectedGravity.Y
-    accelBias.Z = avgAccel.Z - expectedGravity.Z
-
-// Step 8: Store Calibration Parameters
-    StoreAccelBias(accelBias)
-    StoreAccelTemperatureReference(imuTemperature)
-
-// Step 9: Verify Calibration
-    IF BiasMagnitude(accelBias) > allowableBiasLimit THEN
-        DISPLAY "Warning: Accelerometer Bias Out of Range"
-    ENDIF
-
-    DISPLAY "Accelerometer Calibration Complete"
-
---------------------------------------------------
-OPTIONAL MULTI-AXIS SCALE FACTOR CALIBRATION
---------------------------------------------------
-
-    FOR each orientation IN SixAxisCalibrationPositions DO
-
-        DISPLAY "Place Rocket in Orientation:", orientation
-
-        WAIT stabilizationTime
-
-        Collect accelerometer samples
-
-        avgMeasurement = Average(samples)
-
-        StoreCalibrationMeasurement(orientation, avgMeasurement)
-
+        validSampleCount = 0
+    
+        DISPLAY "Collecting", calibrationSampleCount, "samples..."
+    
+        WHILE validSampleCount < calibrationSampleCount DO
+        
+// Step 1: Read raw accelerometer data
+            accelRawData = IMU_ReadAccelerometer()
+        
+// Step 2: Check for stationary condition
+            accelMagnitude = SQRT(accelRawData.X² + accelRawData.Y² + accelRawData.Z²)
+        
+            IF ABS(accelMagnitude - gravityConstant) < stationaryTolerance THEN
+        // Rocket is stationary - accumulate sample
+                accelSum_X += accelRawData.X
+                accelSum_Y += accelRawData.Y
+                accelSum_Z += accelRawData.Z
+                validSampleCount += 1
+            
+        // Optional: Display progress
+                IF validSampleCount MOD 50 == 0 THEN
+                    DISPLAY "Progress:", validSampleCount, "/", calibrationSampleCount
+                ENDIF
+            ELSE
+        // Movement detected - warn user
+                DISPLAY "WARNING: Movement detected! Keep rocket stationary."
+        // Option 1: Continue and hope it stabilizes
+        // Option 2: Reset counter (uncomment below)
+        // accelSum_X = 0
+        // accelSum_Y = 0
+        // accelSum_Z = 0
+        // validSampleCount = 0
+            ENDIF
+        
+            WAIT samplingInterval
+        END WHILE
+    
+// Step 3: Compute average for this orientation
+        measurementData[orientationIndex][0] = accelSum_X / calibrationSampleCount  // X
+        measurementData[orientationIndex][1] = accelSum_Y / calibrationSampleCount  // Y
+        measurementData[orientationIndex][2] = accelSum_Z / calibrationSampleCount  // Z
+    
+        DISPLAY "✓ Orientation", orientationIndex + 1, "complete"
+        DISPLAY "Average readings: X =", measurementData[orientationIndex][0], 
+                            "Y =", measurementData[orientationIndex][1],
+                            "Z =", measurementData[orientationIndex][2]
+    
     END FOR
+================================================================================
+PHASE 2: CALCULATE CALIBRATION PARAMETERS
+================================================================================
 
-// Step 10: Compute Scale and Alignment Matrix
-    calibrationMatrix = SolveCalibrationMatrix()
+// We now have 6 measurements, each should read ±g on one axis and ~0 on others
+// Measured data format:
+//   measurementData[i][j] where i = orientation (0-5), j = axis (0=X, 1=Y, 2=Z)
 
-    StoreCalibrationMatrix(calibrationMatrix)
+// Extract measurements for each axis pair (positive and negative)
+        meas_X_pos = measurementData[0]  // +X up:  [+g_measured, 0, 0] (ideally)
+        meas_X_neg = measurementData[1]  // -X up:  [-g_measured, 0, 0]
+        meas_Y_pos = measurementData[2]  // +Y up:  [0, +g_measured, 0]
+        meas_Y_neg = measurementData[3]  // -Y up:  [0, -g_measured, 0]
+        meas_Z_pos = measurementData[4]  // +Z up:  [0, 0, +g_measured]
+        meas_Z_neg = measurementData[5]  // -Z up:  [0, 0, -g_measured]
 
---------------------------------------------------
-START RUNTIME ACCELEROMETER COMPENSATION LOOP
---------------------------------------------------
-// Example explained in short steps :- 
-    WHILE rocket is powered DO
+// Calculate bias for each axis (average of positive and negative orientations)
+        bias_X = (meas_X_pos[0] + meas_X_neg[0]) / 2
+        bias_Y = (meas_Y_pos[1] + meas_Y_neg[1]) / 2
+        bias_Z = (meas_Z_pos[2] + meas_Z_neg[2]) / 2
 
-// Step 1: Acquire Raw Accelerometer Data
-        accelRawData = IMU_ReadAccelerometer()
+// Calculate scale factor for each axis
 
-// Step 2: Remove Bias
-        accelBiasCorrected.X = accelRawData.X - accelBias.X
-        accelBiasCorrected.Y = accelRawData.Y - accelBias.Y
-        accelBiasCorrected.Z = accelRawData.Z - accelBias.Z
+// Scale = 2*g / (measurement_positive - measurement_negative)
+        scale_X = (2 * gravityConstant) / (meas_X_pos[0] - meas_X_neg[0])
+        scale_Y = (2 * gravityConstant) / (meas_Y_pos[1] - meas_Y_neg[1])
+        scale_Z = (2 * gravityConstant) / (meas_Z_pos[2] - meas_Z_neg[2])
 
-// Step 3: Apply Scale and Alignment Correction
-        accelCorrected = calibrationMatrix × accelBiasCorrected
+// We know that there will be errors due to misalignment of axes.
+// So we consider both Scale factor and the misalignment factor to get the Calibration matrix.
 
-// Step 4: Optional Temperature Compensation
-        currentTemperature = IMU_ReadTemperature()
-        accelCorrected = TemperatureCompensation(accelCorrected, currentTemperature)
+================================================================================
+PHASE 3: STORE CALIBRATION DATA
+================================================================================
 
-// Step 5: Send Corrected Acceleration To Flight Computer
-        FlightComputer_SendAccelData(accelCorrected)
+// Store to EEPROM/Flash
+        StoreToNVM(ADDRESS_BIAS_X, bias_X)
+        StoreToNVM(ADDRESS_BIAS_Y, bias_Y)
+        StoreToNVM(ADDRESS_BIAS_Z, bias_Z)
 
-        WAIT runtimeUpdateInterval
+// Store full 3×3 calibration matrix
+        FOR i = 0 TO 2 DO
+            FOR j = 0 TO 2 DO
+                StoreToNVM(ADDRESS_CALIB_MATRIX + i*3 + j, calibrationMatrix_M[i][j])
+            END FOR
+        END FOR
+
+================================================================================
+EXAMPLE :- 
+================================================================================
+
+// Step 1: Remove bias
+        accel_unbiased[0] = rawAccel.X - bias[0]
+        accel_unbiased[1] = rawAccel.Y - bias[1]
+        accel_unbiased[2] = rawAccel.Z - bias[2]
     
-    END WHILE
+// Step 2: Apply calibration matrix (scale + misalignment correction)
+        accel_corrected[0] = calibMatrix[0][0] * accel_unbiased[0] + 
+                            calibMatrix[0][1] * accel_unbiased[1] + 
+                            calibMatrix[0][2] * accel_unbiased[2]
     
-    SHUTDOWN SYSTEM
+        accel_corrected[1] = calibMatrix[1][0] * accel_unbiased[0] + 
+                            calibMatrix[1][1] * accel_unbiased[1] + 
+                            calibMatrix[1][2] * accel_unbiased[2]
+    
+        accel_corrected[2] = calibMatrix[2][0] * accel_unbiased[0] + 
+                            calibMatrix[2][1] * accel_unbiased[1] + 
+                            calibMatrix[2][2] * accel_unbiased[2]
+    
+        RETURN accel_corrected
+    END FUNCTION
+
+// Main flight loop
+        LOAD CALIBRATION FROM NON-VOLATILE MEMORY
+        bias = [LoadFromNVM(ADDRESS_BIAS_X), LoadFromNVM(ADDRESS_BIAS_Y), LoadFromNVM(ADDRESS_BIAS_Z)]
+
+// Load full matrix or simple scale factors
+        IF USING_FULL_CALIBRATION THEN
+            FOR i = 0 TO 2 DO
+                FOR j = 0 TO 2 DO
+                    calibMatrix[i][j] = LoadFromNVM(ADDRESS_CALIB_MATRIX + i*3 + j)
+                END FOR
+            END FOR
+        ELSE
+            scale = [LoadFromNVM(ADDRESS_SCALE_X), LoadFromNVM(ADDRESS_SCALE_Y), LoadFromNVM(ADDRESS_SCALE_Z)]
+        ENDIF
+// Written in very short manner :- 
+
+        WHILE InFlight() DO
+// Read raw accelerometer
+            accelRaw = IMU_ReadAccelerometer()
+    
+// Apply calibration
+            IF USING_FULL_CALIBRATION THEN
+                accelCorrected = ApplyCalibration(accelRaw, bias, calibMatrix)
+            ELSE
+                accelCorrected = ApplySimpleCalibration(accelRaw, bias, scale)
+            ENDIF
+    
+// Optional: Temperature compensation
+            currentTemp = IMU_ReadTemperature()
+            accelCorrected = TemperatureCompensate(accelCorrected, currentTemp)
+    
+// Send to flight computer
+            FlightComputer_SendAccelData(accelCorrected)
+    
+            WAIT flightUpdateInterval
+        END WHILE
