@@ -129,49 +129,16 @@ PHASE 3: STORE CALIBRATION DATA
 ================================================================================
 EXAMPLE :- 
 ================================================================================
-
-// Step 1: Remove bias
-        accel_unbiased[0] = rawAccel.X - bias[0]
-        accel_unbiased[1] = rawAccel.Y - bias[1]
-        accel_unbiased[2] = rawAccel.Z - bias[2]
-    
-// Step 2: Apply calibration matrix (scale + misalignment correction)
-        accel_corrected[0] = calibMatrix[0][0] * accel_unbiased[0] + 
-                            calibMatrix[0][1] * accel_unbiased[1] + 
-                            calibMatrix[0][2] * accel_unbiased[2]
-    
-        accel_corrected[1] = calibMatrix[1][0] * accel_unbiased[0] + 
-                            calibMatrix[1][1] * accel_unbiased[1] + 
-                            calibMatrix[1][2] * accel_unbiased[2]
-    
-        accel_corrected[2] = calibMatrix[2][0] * accel_unbiased[0] + 
-                            calibMatrix[2][1] * accel_unbiased[1] + 
-                            calibMatrix[2][2] * accel_unbiased[2]
-    
-        RETURN accel_corrected
-    END FUNCTION
-
-// Main flight loop
-        LOAD CALIBRATION FROM NON-VOLATILE MEMORY
-        bias = [LoadFromNVM(ADDRESS_BIAS_X), LoadFromNVM(ADDRESS_BIAS_Y), LoadFromNVM(ADDRESS_BIAS_Z)]
-
-// Load full matrix or simple scale factors
-        IF USING_FULL_CALIBRATION THEN
-            FOR i = 0 TO 2 DO
-                FOR j = 0 TO 2 DO
-                    calibMatrix[i][j] = LoadFromNVM(ADDRESS_CALIB_MATRIX + i*3 + j)
-                END FOR
-            END FOR
-        ELSE
-            scale = [LoadFromNVM(ADDRESS_SCALE_X), LoadFromNVM(ADDRESS_SCALE_Y), LoadFromNVM(ADDRESS_SCALE_Z)]
-        ENDIF
-// Written in very short manner :- 
-
         WHILE InFlight() DO
-// Read raw accelerometer
+// Read raw accelerometer readings
             accelRaw = IMU_ReadAccelerometer()
+
+// Remove Bias :- 
+            accel_unbiased[0] = rawAccel.X - bias[0]
+            accel_unbiased[1] = rawAccel.Y - bias[1]
+            accel_unbiased[2] = rawAccel.Z - bias[2]
     
-// Apply calibration
+// Apply calibration matrix (scale + misalignment correction)
             IF USING_FULL_CALIBRATION THEN
                 accelCorrected = ApplyCalibration(accelRaw, bias, calibMatrix)
             ELSE
@@ -181,6 +148,9 @@ EXAMPLE :-
 // Optional: Temperature compensation
             currentTemp = IMU_ReadTemperature()
             accelCorrected = TemperatureCompensate(accelCorrected, currentTemp)
+
+// Calculate the actual true values :- 
+    // By True value = (Calibration matrix)*(Measured Matrix - Bias)
     
 // Send to flight computer
             FlightComputer_SendAccelData(accelCorrected)
